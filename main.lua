@@ -221,7 +221,8 @@ end
 
 function FlatScreen:_exit()
     self:_restoreBrightness()
-    UIManager:close(self)
+    -- Refresh the entire display after repainting the widgets beneath the panel.
+    UIManager:close(self, "full")
 end
 
 function FlatScreen:onClose()

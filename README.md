@@ -46,5 +46,6 @@ The percentage represents the position within the device’s supported brightnes
 
 ## Limitations
 
-- The slider controls brightness only, not frontlight warmth or color temperature. (I don't own an e-reader with warmth so I couldn't test it)
 - Standby prevention uses KOReader’s optional standby API; the plugin does not explicitly disable automatic suspend or power-off timers.
+- I only own a Kindle (11th Generation) - 2024 Release so I can't test features my model doesn't support.
+    - Ex: The slider controls brightness only, not frontlight warmth or color temperature.
