@@ -17,6 +17,7 @@ local function class(base)
 end
 
 local draws, refreshes, brightness, shown, closed
+local night_changes, opening_modes
 local standby = 0
 local scale = 1
 local colors = { COLOR_WHITE = "white", COLOR_BLACK = "black" }
@@ -26,11 +27,17 @@ for _, method in ipairs{ "paintRect", "paintRoundedRect", "paintCircle", "fill" 
         draws[#draws + 1] = { method = method, ... }
     end
 end
-local screen = { bb = bb }
+local screen = { bb = bb, night_mode = false }
 function screen:getWidth() return 600 * scale end
 function screen:getHeight() return 800 * scale end
 function screen:scaleBySize(v) return v * scale end
-function screen:refreshFull() end
+function screen:refreshFull()
+    opening_modes[#opening_modes + 1] = self.night_mode
+end
+function screen:toggleNightMode()
+    self.night_mode = not self.night_mode
+    night_changes[#night_changes + 1] = self.night_mode
+end
 local power = { fl_min = 0, fl_max = 24 }
 function power:frontlightIntensity() return 12 end
 function power:setIntensity(v) brightness[#brightness + 1] = v end
@@ -70,8 +77,10 @@ local modules = {
 for name, module in pairs(modules) do package.loaded[name] = module end
 local Plugin = dofile("main.lua")
 local plugin = Plugin:new{ ui = { menu = { registerToMainMenu = function() end } } }
-local function panel()
+local function panel(night_mode)
     draws, refreshes, brightness = {}, {}, {}
+    night_changes, opening_modes = {}, {}
+    screen.night_mode = night_mode or false
     standby = 0
     plugin:openFlatField()
     draws, refreshes = {}, {}
@@ -191,6 +200,38 @@ test("toolbar footprint and rounded controls scale with the screen", function()
         assert(p.slider_touch_rect.x > p.exit_rect.x + p.exit_rect.w)
     end
     scale = 1
+end)
+
+test("night mode is disabled before the opening refresh and restored on Exit", function()
+    local p = panel(true)
+    assert(screen.night_mode == false)
+    assert(#opening_modes == 1 and opening_modes[1] == false)
+    assert(#night_changes == 1 and night_changes[1] == false)
+    p:onTouch(nil, { pos = pos(p, 0.75) })
+    assert(screen.night_mode == false)
+    p:onPanRelease(nil, { pos = pos(p, 0.75) })
+    p:onTap(nil, { pos = { x = p.exit_rect.x + 1, y = p.exit_rect.y + 1 } })
+    assert(screen.night_mode == true and #night_changes == 2)
+    assert(last(brightness) == 12 and standby == 0)
+    assert(closed.mode == "full")
+    p:_restoreState()
+    assert(#night_changes == 2, "cleanup must not toggle night mode twice")
+end)
+
+test("day mode stays unchanged on open and close", function()
+    local p = panel(false)
+    assert(screen.night_mode == false and #night_changes == 0)
+    p:onClose()
+    assert(screen.night_mode == false and #night_changes == 0)
+    assert(closed.mode == "full")
+end)
+
+test("external widget closure restores night mode and requests a full refresh", function()
+    local p = panel(true)
+    manager:close(p)
+    assert(screen.night_mode == true and #night_changes == 2)
+    assert(last(refreshes).mode == "full" and last(refreshes).region == nil)
+    assert(last(brightness) == 12 and standby == 0)
 end)
 
 print("All Flat Field checks passed.")

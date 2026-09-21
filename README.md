@@ -8,6 +8,7 @@ Turn an e-reader’s screen into a white flat-field panel with adjustable frontl
 - Adjusts frontlight brightness by tapping or dragging the slider.
 - Refreshes only the toolbar when brightness changes, leaving the white area untouched.
 - Starts at the current brightness and restores it when the panel closes.
+- Temporarily disables night mode so the panel stays white, then restores the previous mode on exit without changing your saved preference.
 - Prevents low-power standby while open, when supported by KOReader.
 - Opens from either the file browser or the reader, without requiring an open book.
 
@@ -40,13 +41,13 @@ If downloading a repository archive, rename the extracted folder to `flatfield.k
 1. Open KOReader’s main menu and select **Flat field panel** in the tools section.
 2. The screen briefly flashes black before displaying the white panel.
 3. Tap or drag the brightness slider.
-4. Tap **Exit** to return to KOReader and restore the previous brightness.
+4. Tap **Exit** to return to KOReader and restore the previous brightness and night mode.
 
 The percentage represents the position within the device’s supported brightness range, rather than a measured light output. Taps outside the controls are consumed by the panel.
 
 ## Development checks
 
-Run `luajit tests/test_flatfield.lua` from the plugin folder to check slider gestures, refresh regions, brightness restoration, and toolbar geometry with stubbed KOReader services. Device testing is still needed to assess actual e-ink refresh speed.
+Run `luajit tests/test_flatfield.lua` from the plugin folder to check slider gestures, refresh regions, brightness and night-mode restoration, and toolbar geometry with stubbed KOReader services. Device testing is still needed to assess actual e-ink refresh speed.
 
 ## Limitations
 

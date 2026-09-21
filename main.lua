@@ -123,6 +123,13 @@ function FlatScreen:init()
         UIManager:preventStandby()
         self.standby_prevented = true
     end
+
+    -- Override screen inversion only; leave the saved night-mode preference
+    -- and theme events alone. This API handles both HW and SW inversion.
+    self.original_night_mode = Screen.night_mode
+    if Screen.night_mode then
+        Screen:toggleNightMode()
+    end
 end
 
 function FlatScreen:_percentText()
@@ -253,9 +260,15 @@ FlatScreen.onHoldPan = FlatScreen.onPan
 FlatScreen.onHoldRelease = FlatScreen.onPanRelease
 FlatScreen.onMultiSwipe = FlatScreen.onSwipe
 
-function FlatScreen:_restoreBrightness()
+function FlatScreen:_restoreState()
     if self.restored then return end
     self.restored = true
+
+    if Screen.night_mode ~= self.original_night_mode then
+        Screen:toggleNightMode()
+        -- Also refresh when KOReader closes the widget outside the Exit path.
+        UIManager:setDirty(nil, "full")
+    end
 
     if PowerD.setIntensity and self.original_intensity ~= nil then
         pcall(PowerD.setIntensity, PowerD, self.original_intensity)
@@ -268,7 +281,7 @@ function FlatScreen:_restoreBrightness()
 end
 
 function FlatScreen:_exit()
-    self:_restoreBrightness()
+    self:_restoreState()
     -- Refresh the entire display after repainting the widgets beneath the panel.
     UIManager:close(self, "full")
 end
@@ -279,7 +292,7 @@ function FlatScreen:onClose()
 end
 
 function FlatScreen:onCloseWidget()
-    self:_restoreBrightness()
+    self:_restoreState()
     if self.exit_text then self.exit_text:free() end
     if self.percent_text then self.percent_text:free() end
 end
