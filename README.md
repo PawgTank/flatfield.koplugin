@@ -44,6 +44,10 @@ If downloading a repository archive, rename the extracted folder to `flatfield.k
 
 The percentage represents the position within the device’s supported brightness range, rather than a measured light output. Taps outside the controls are consumed by the panel.
 
+## Development checks
+
+Run `luajit tests/test_flatfield.lua` from the plugin folder to check slider gestures, refresh regions, brightness restoration, and toolbar geometry with stubbed KOReader services. Device testing is still needed to assess actual e-ink refresh speed.
+
 ## Limitations
 
 - Standby prevention uses KOReader’s optional standby API; the plugin does not explicitly disable automatic suspend or power-off timers.

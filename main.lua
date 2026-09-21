@@ -15,6 +15,8 @@ local PowerD = Device:getPowerDevice()
 
 local FlatScreen = InputContainer:extend{
     modal = true,
+    covers_fullscreen = true,
+    disable_double_tap = true,
 }
 
 local function clamp(value, minimum, maximum)
@@ -40,9 +42,9 @@ function FlatScreen:init()
     self.exit_w = Screen:scaleBySize(110)
     self.control_h = Screen:scaleBySize(42)
     self.border = math.max(1, Screen:scaleBySize(2))
-    self.track_h = math.max(3, Screen:scaleBySize(5))
-    self.knob_w = math.max(8, Screen:scaleBySize(12))
-    self.knob_h = Screen:scaleBySize(32)
+    self.track_h = math.max(1, Screen:scaleBySize(2))
+    self.fill_h = math.max(3, Screen:scaleBySize(6))
+    self.knob_radius = math.max(4, Screen:scaleBySize(16))
     self.percent_w = Screen:scaleBySize(86)
 
     self.exit_rect = Geom:new{
@@ -59,9 +61,9 @@ function FlatScreen:init()
     end
     self.slider_y = math.floor(self.toolbar_h / 2)
     self.slider_touch_rect = Geom:new{
-        x = self.slider_x1 - self.margin,
+        x = self.slider_x1 - self.knob_radius,
         y = 0,
-        w = (self.slider_x2 - self.slider_x1) + self.margin * 2,
+        w = (self.slider_x2 - self.slider_x1) + self.knob_radius * 2,
         h = self.toolbar_h,
     }
 
@@ -92,10 +94,10 @@ function FlatScreen:init()
 
     self.exit_text = TextWidget:new{
         text = _("Exit"),
-        face = Font:getFace("cfont", 22),
+        face = Font:getFace("cfont", 20),
         bold = true,
         padding = 0,
-        fgcolor = Blitbuffer.COLOR_BLACK,
+        fgcolor = Blitbuffer.COLOR_WHITE,
     }
     self.percent_text = TextWidget:new{
         text = self:_percentText(),
@@ -104,26 +106,17 @@ function FlatScreen:init()
         fgcolor = Blitbuffer.COLOR_BLACK,
     }
 
-    self.ges_events = {
-        Tap = {
-            GestureRange:new{
-                ges = "tap",
-                range = self.dimen,
-            },
-        },
-        Pan = {
-            GestureRange:new{
-                ges = "pan",
-                range = self.dimen,
-            },
-        },
-        PanRelease = {
-            GestureRange:new{
-                ges = "pan_release",
-                range = self.dimen,
-            },
-        },
-    }
+    self.ges_events = {}
+    for event, gesture in pairs{
+        Touch = "touch", Tap = "tap", Pan = "pan", PanRelease = "pan_release",
+        Hold = "hold", HoldPan = "hold_pan", HoldRelease = "hold_release",
+        Swipe = "swipe", MultiSwipe = "multiswipe",
+    } do
+        self.ges_events[event] = { GestureRange:new{
+            ges = gesture,
+            range = self.dimen,
+        } }
+    end
 
     -- Keep KOReader from entering low-power standby while the flat panel is open.
     if UIManager.preventStandby then
@@ -161,10 +154,18 @@ function FlatScreen:_setIntensityFromX(x)
 
     self.percent_text:setText(self:_percentText())
 
-    -- Only refresh the small control strip. The flat-field area stays untouched.
-    UIManager:setDirty(self, function()
-        return "ui", self.toolbar_dimen
-    end)
+    self:_refreshControls(self.dragging and "fast" or "ui")
+end
+
+function FlatScreen:_refreshControls(mode)
+    if mode == "fast" then
+        -- Like ZenOS's brightness slider, repaint the controls directly during
+        -- a drag to avoid repainting the full widget tree for each movement.
+        self:_paintToolbar(Screen.bb, 0, 0)
+        UIManager:setDirty(nil, "fast", self.toolbar_dimen)
+    else
+        UIManager:setDirty(self, "ui", self.toolbar_dimen)
+    end
 end
 
 function FlatScreen:_pointIn(rect, pos)
@@ -173,8 +174,26 @@ function FlatScreen:_pointIn(rect, pos)
         and pos.y >= rect.y and pos.y < rect.y + rect.h
 end
 
+function FlatScreen:onTouch(_, ges)
+    local pos = ges and ges.pos
+    self.dragging = self:_pointIn(self.slider_touch_rect, pos) or false
+    if self.dragging then self:_setIntensityFromX(pos.x) end
+    return true
+end
+
+function FlatScreen:_finishDrag(pos)
+    -- Always clean up fast-refresh artifacts, even if the last value is unchanged.
+    if pos then self:_setIntensityFromX(pos.x) end
+    self.dragging = false
+    self:_refreshControls("ui")
+end
+
 function FlatScreen:onTap(_, ges)
     local pos = ges and ges.pos
+    if self.dragging then
+        self:_finishDrag(pos)
+        return true
+    end
     if self:_pointIn(self.exit_rect, pos) then
         self:_exit()
         return true
@@ -191,19 +210,48 @@ end
 
 function FlatScreen:onPan(_, ges)
     local pos = ges and ges.pos
-    if self:_pointIn(self.slider_touch_rect, pos) then
+    -- Pan positions are current coordinates; only the initial contact needs to
+    -- hit the slider. Keep tracking when a finger drifts outside the toolbar.
+    local start = ges and ges.start_pos
+    if not start and pos and ges.relative then
+        start = { x = pos.x - ges.relative.x, y = pos.y - ges.relative.y }
+    end
+    if not self.dragging and self:_pointIn(self.slider_touch_rect, start or pos) then
+        self.dragging = true
+    end
+    if self.dragging and pos then
         self:_setIntensityFromX(pos.x)
     end
     return true
 end
 
 function FlatScreen:onPanRelease(_, ges)
-    local pos = ges and ges.pos
-    if self:_pointIn(self.slider_touch_rect, pos) then
-        self:_setIntensityFromX(pos.x)
+    if self.dragging then self:_finishDrag(ges and ges.pos) end
+    return true
+end
+
+function FlatScreen:onSwipe(_, ges)
+    if ges and (self.dragging or self:_pointIn(self.slider_touch_rect, ges.pos)) then
+        -- Unlike a pan, swipe.pos is the START; using it would snap the slider
+        -- back on release. KOReader supplies the actual lift point in end_pos.
+        local pos = ges.end_pos
+        if not pos and not self.dragging and ges.pos then
+            -- Older gesture detectors may omit end_pos. Use the horizontal
+            -- distance only for straight swipes; otherwise retain the last pan.
+            if ges.direction == "east" or ges.direction == "west" then
+                local sign = ges.direction == "east" and 1 or -1
+                pos = { x = ges.pos.x + sign * (ges.distance or 0) }
+            end
+        end
+        self:_finishDrag(pos)
     end
     return true
 end
+
+FlatScreen.onHold = FlatScreen.onPan
+FlatScreen.onHoldPan = FlatScreen.onPan
+FlatScreen.onHoldRelease = FlatScreen.onPanRelease
+FlatScreen.onMultiSwipe = FlatScreen.onSwipe
 
 function FlatScreen:_restoreBrightness()
     if self.restored then return end
@@ -240,10 +288,16 @@ function FlatScreen:paintTo(bb, x, y)
     -- The entire framebuffer is intentionally pure white except for the tiny
     -- control strip at the top edge.
     bb:paintRect(x, y, self.screen_w, self.screen_h, Blitbuffer.COLOR_WHITE)
+    self:_paintToolbar(bb, x, y)
+end
+
+function FlatScreen:_paintToolbar(bb, x, y)
+    bb:paintRect(x, y, self.screen_w, self.toolbar_h, Blitbuffer.COLOR_WHITE)
 
     local ex = x + self.exit_rect.x
     local ey = y + self.exit_rect.y
-    bb:paintBorder(ex, ey, self.exit_rect.w, self.exit_rect.h, self.border, Blitbuffer.COLOR_BLACK)
+    bb:paintRoundedRect(ex, ey, self.exit_rect.w, self.exit_rect.h,
+        Blitbuffer.COLOR_BLACK, math.floor(self.control_h / 2))
 
     local exit_size = self.exit_text:getSize()
     self.exit_text:paintTo(
@@ -253,17 +307,25 @@ function FlatScreen:paintTo(bb, x, y)
     )
 
     local track_y = y + self.slider_y - math.floor(self.track_h / 2)
-    bb:paintRect(
+    bb:paintRoundedRect(
         x + self.slider_x1,
         track_y,
         self.slider_x2 - self.slider_x1,
         self.track_h,
-        Blitbuffer.COLOR_BLACK
+        Blitbuffer.COLOR_BLACK,
+        math.floor(self.track_h / 2)
     )
 
-    local knob_x = x + self:_knobX() - math.floor(self.knob_w / 2)
-    local knob_y = y + self.slider_y - math.floor(self.knob_h / 2)
-    bb:paintRect(knob_x, knob_y, self.knob_w, self.knob_h, Blitbuffer.COLOR_BLACK)
+    local knob_x = self:_knobX()
+    if knob_x > self.slider_x1 then
+        bb:paintRoundedRect(x + self.slider_x1,
+            y + self.slider_y - math.floor(self.fill_h / 2),
+            knob_x - self.slider_x1, self.fill_h, Blitbuffer.COLOR_BLACK,
+            math.floor(self.fill_h / 2))
+    end
+    bb:paintCircle(x + knob_x, y + self.slider_y, self.knob_radius, Blitbuffer.COLOR_WHITE)
+    bb:paintCircle(x + knob_x, y + self.slider_y,
+        self.knob_radius - self.border, Blitbuffer.COLOR_BLACK)
 
     local pct_size = self.percent_text:getSize()
     local pct_x = x + self.screen_w - self.margin - pct_size.w
