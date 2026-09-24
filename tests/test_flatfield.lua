@@ -18,6 +18,7 @@ end
 
 local draws, refreshes, brightness, shown, closed
 local night_changes, opening_modes
+local repaints = 0
 local standby = 0
 local scale = 1
 local colors = { COLOR_WHITE = "white", COLOR_BLACK = "black" }
@@ -49,7 +50,10 @@ function manager:show(widget) shown = widget end
 function manager:setDirty(widget, mode, region)
     refreshes[#refreshes + 1] = { widget = widget, mode = mode, region = region }
 end
-function manager:forceRePaint() end
+function manager:forceRePaint()
+    repaints = repaints + 1
+    shown:paintTo(bb, 0, 0)
+end
 function manager:preventStandby() standby = standby + 1 end
 function manager:allowStandby() standby = standby - 1 end
 function manager:close(widget, mode)
@@ -82,6 +86,8 @@ local function panel(night_mode)
     night_changes, opening_modes = {}, {}
     screen.night_mode = night_mode or false
     standby = 0
+    closed = nil
+    repaints = 0
     plugin:openFlatField()
     draws, refreshes = {}, {}
     return shown
@@ -176,13 +182,40 @@ test("endpoints clamp to hardware range, including a nonzero minimum", function(
     power.fl_min = 0
 end)
 
+test("Refresh repeats the black-to-white sequence and preserves panel state", function()
+    local p = panel(true)
+    p:onTap(nil, { pos = pos(p, 0.75) })
+    local intensity_changes = #brightness
+    local tap = { pos = { x = p.refresh_rect.x + p.refresh_rect.w / 2,
+        y = p.refresh_rect.y + p.refresh_rect.h / 2 } }
+    for count = 1, 2 do
+        draws, refreshes = {}, {}
+        p:onTouch(nil, tap)
+        assert(not p.dragging)
+        assert(#draws == 0 and #refreshes == 0)
+        assert(p:onTap(nil, tap))
+        assert(draws[1].method == "fill" and draws[1][1] == colors.COLOR_BLACK)
+        assert(#opening_modes == count + 1 and last(opening_modes) == false)
+        assert(#refreshes == 1 and last(refreshes).widget == p)
+        assert(last(refreshes).mode == "full" and last(refreshes).region == nil)
+        assert(repaints == count + 1)
+        assert(draws[2].method == "paintRect" and draws[2][4] == screen:getHeight())
+        assert(draws[2][5] == colors.COLOR_WHITE)
+        assert(p.intensity == 18 and #brightness == intensity_changes)
+        assert(shown == p and closed == nil and standby == 1)
+        assert(screen.night_mode == false and #night_changes == 1)
+    end
+    p:onClose()
+    assert(last(brightness) == 12 and screen.night_mode == true and standby == 0)
+end)
+
 test("Exit restores brightness and standby, and requests a full refresh", function()
     local p = panel()
     p:onTap(nil, { pos = pos(p, 1) })
     p:onTap(nil, { pos = { x = p.exit_rect.x + 1, y = p.exit_rect.y + 1 } })
     assert(last(brightness) == 12 and standby == 0)
     assert(closed.widget == p and closed.mode == "full")
-    assert(p.exit_text.freed and p.percent_text.freed)
+    assert(p.exit_text.freed and p.refresh_text.freed and p.percent_text.freed)
 end)
 
 test("toolbar footprint and rounded controls scale with the screen", function()
@@ -192,12 +225,16 @@ test("toolbar footprint and rounded controls scale with the screen", function()
         assert(p.toolbar_h == 64 * factor)
         assert(p.exit_rect.w == 110 * factor and p.exit_rect.h == 42 * factor)
         assert(p.exit_text.fgcolor == colors.COLOR_WHITE)
+        assert(p.refresh_rect.w == 110 * factor and p.refresh_rect.h == 42 * factor)
+        assert(p.refresh_text.fgcolor == colors.COLOR_WHITE)
         p:paintTo(bb, 0, 0)
         assert(draws[1][4] == screen:getHeight())
         assert(draws[3].method == "paintRoundedRect")
         assert(draws[3][6] == p.control_h / 2)
         assert(last(draws).method == "paintCircle")
-        assert(p.slider_touch_rect.x > p.exit_rect.x + p.exit_rect.w)
+        assert(p.refresh_rect.x > p.exit_rect.x + p.exit_rect.w)
+        assert(p.slider_touch_rect.x > p.refresh_rect.x + p.refresh_rect.w)
+        assert(p.slider_x2 > p.slider_x1)
     end
     scale = 1
 end)

@@ -1,10 +1,11 @@
 # Flat Field for KOReader
 
-Turn an e-reader’s screen into a white flat-field panel with adjustable frontlight brightness. A small toolbar at the top contains an **Exit** button, a brightness slider, and a percentage readout; the rest of the screen stays white.
+Turn an e-reader’s screen into a white flat-field panel with adjustable frontlight brightness. A small toolbar at the top contains **Exit** and **Refresh** buttons, a brightness slider, and a percentage readout; the rest of the screen stays white.
 
 ## Features
 
 - Performs a full black refresh followed by a full white refresh when opened to reduce ghosting.
+- Repeats the full black-to-white refresh on demand with the **Refresh** button, keeping the current brightness.
 - Adjusts frontlight brightness by tapping or dragging the slider.
 - Refreshes only the toolbar when brightness changes, leaving the white area untouched.
 - Starts at the current brightness and restores it when the panel closes.
@@ -15,7 +16,7 @@ Turn an e-reader’s screen into a white flat-field panel with adjustable frontl
 ## Requirements
 
 - KOReader running on a device with a controllable frontlight.
-- A touchscreen for the slider and Exit button.
+- A touchscreen for the slider and buttons.
 
 The plugin checks whether the device reports a frontlight before opening. If it does not, KOReader displays a message instead of the panel.
 
@@ -41,7 +42,8 @@ If downloading a repository archive, rename the extracted folder to `flatfield.k
 1. Open KOReader’s main menu and select **Flat field panel** in the tools section.
 2. The screen briefly flashes black before displaying the white panel.
 3. Tap or drag the brightness slider.
-4. Tap **Exit** to return to KOReader and restore the previous brightness and night mode.
+4. Tap **Refresh** whenever you want another full black-to-white screen refresh.
+5. Tap **Exit** to return to KOReader and restore the previous brightness and night mode.
 
 The percentage represents the position within the device’s supported brightness range, rather than a measured light output. Taps outside the controls are consumed by the panel.
 

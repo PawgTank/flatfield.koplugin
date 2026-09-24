@@ -54,7 +54,14 @@ function FlatScreen:init()
         h = self.control_h,
     }
 
-    self.slider_x1 = self.exit_rect.x + self.exit_rect.w + self.margin * 2
+    self.refresh_rect = Geom:new{
+        x = self.exit_rect.x + self.exit_rect.w + self.margin,
+        y = self.exit_rect.y,
+        w = Screen:scaleBySize(110),
+        h = self.control_h,
+    }
+
+    self.slider_x1 = self.refresh_rect.x + self.refresh_rect.w + self.margin * 2
     self.slider_x2 = self.screen_w - self.margin - self.percent_w
     if self.slider_x2 <= self.slider_x1 then
         self.slider_x2 = self.screen_w - self.margin
@@ -94,6 +101,13 @@ function FlatScreen:init()
 
     self.exit_text = TextWidget:new{
         text = _("Exit"),
+        face = Font:getFace("cfont", 20),
+        bold = true,
+        padding = 0,
+        fgcolor = Blitbuffer.COLOR_WHITE,
+    }
+    self.refresh_text = TextWidget:new{
+        text = _("Refresh"),
         face = Font:getFace("cfont", 20),
         bold = true,
         padding = 0,
@@ -175,6 +189,14 @@ function FlatScreen:_refreshControls(mode)
     end
 end
 
+function FlatScreen:_refreshScreen()
+    -- Repeat the opening anti-ghosting sequence without changing panel state.
+    Screen.bb:fill(Blitbuffer.COLOR_BLACK)
+    Screen:refreshFull(0, 0, self.screen_w, self.screen_h)
+    UIManager:setDirty(self, "full")
+    UIManager:forceRePaint()
+end
+
 function FlatScreen:_pointIn(rect, pos)
     return pos
         and pos.x >= rect.x and pos.x < rect.x + rect.w
@@ -203,6 +225,10 @@ function FlatScreen:onTap(_, ges)
     end
     if self:_pointIn(self.exit_rect, pos) then
         self:_exit()
+        return true
+    end
+    if self:_pointIn(self.refresh_rect, pos) then
+        self:_refreshScreen()
         return true
     end
 
@@ -294,6 +320,7 @@ end
 function FlatScreen:onCloseWidget()
     self:_restoreState()
     if self.exit_text then self.exit_text:free() end
+    if self.refresh_text then self.refresh_text:free() end
     if self.percent_text then self.percent_text:free() end
 end
 
@@ -317,6 +344,18 @@ function FlatScreen:_paintToolbar(bb, x, y)
         bb,
         ex + math.floor((self.exit_rect.w - exit_size.w) / 2),
         ey + math.floor((self.exit_rect.h - exit_size.h) / 2)
+    )
+
+    local rx = x + self.refresh_rect.x
+    local ry = y + self.refresh_rect.y
+    bb:paintRoundedRect(rx, ry, self.refresh_rect.w, self.refresh_rect.h,
+        Blitbuffer.COLOR_BLACK, math.floor(self.control_h / 2))
+
+    local refresh_size = self.refresh_text:getSize()
+    self.refresh_text:paintTo(
+        bb,
+        rx + math.floor((self.refresh_rect.w - refresh_size.w) / 2),
+        ry + math.floor((self.refresh_rect.h - refresh_size.h) / 2)
     )
 
     local track_y = y + self.slider_y - math.floor(self.track_h / 2)
@@ -375,16 +414,8 @@ function FlatField:openFlatField()
 
     local flat_screen = FlatScreen:new{}
 
-    -- Anti-ghosting pass #1: force every pixel dark and perform a full e-ink refresh.
-    -- This follows the same basic black/restore approach KOReader uses for its
-    -- optional screensaver anti-ghosting flashes.
-    Screen.bb:fill(Blitbuffer.COLOR_BLACK)
-    Screen:refreshFull(0, 0, Screen:getWidth(), Screen:getHeight())
-
-    -- Anti-ghosting pass #2: paint the final white panel and perform a full refresh.
     UIManager:show(flat_screen)
-    UIManager:setDirty(flat_screen, "full")
-    UIManager:forceRePaint()
+    flat_screen:_refreshScreen()
 end
 
 return FlatField
